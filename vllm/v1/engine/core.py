@@ -23,6 +23,9 @@ from vllm.executor.multiproc_worker_utils import _add_prefix
 from vllm.logger import init_logger
 from vllm.logging_utils.dump_input import dump_engine_exception
 from vllm.lora.request import LoRARequest
+from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.separated_encode.sched.encoder_scheduler import EncoderScheduler
+from vllm.tasks import POOLING_TASKS, SupportedTask
 from vllm.transformers_utils.config import (
     maybe_register_config_serialize_by_value)
 from vllm.utils import make_zmq_socket, resolve_obj_by_qualname
@@ -108,6 +111,9 @@ class EngineCore:
                 "This scheduler interface is not public and "
                 "compatibility may not be maintained.",
                 vllm_config.scheduler_config.scheduler_cls)
+        
+        if vllm_config.epd_disagg_config.instance_type == "encode":
+            Scheduler = EncoderScheduler
 
         self.scheduler: SchedulerInterface = Scheduler(
             vllm_config=vllm_config,

@@ -5,7 +5,7 @@ import copy
 import gc
 import os
 from contextlib import AbstractContextManager, nullcontext
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import torch
 import torch.distributed
@@ -23,7 +23,10 @@ from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
-from vllm.pooling_params import PoolingTask
+from vllm.separated_encode.worker.gpu_epd_lm_wrapper import (
+    DisaggLModelGPURunnerWrapper)
+from vllm.separated_encode.worker.gpu_epd_vm_wrapper import (
+    DisaggVModelGPURunnerWrapper)
 from vllm.sequence import IntermediateTensors
 from vllm.utils import GiB_bytes, MemorySnapshot, memory_profiling
 from vllm.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
@@ -81,6 +84,11 @@ class Worker(WorkerBase):
                     torch_profiler_trace_dir, use_gzip=True))
         else:
             self.profiler = None
+        self.separated_encode: bool = False
+        if self.vllm_config.epd_disagg_config.instance_type != "NoEPD":
+            self.separated_encode = True
+            self.instance_type = \
+                self.vllm_config.epd_disagg_config.instance_type
 
     def sleep(self, level: int = 1) -> None:
         from vllm.device_allocator.cumem import CuMemAllocator
@@ -186,8 +194,16 @@ class Worker(WorkerBase):
         set_random_seed(self.model_config.seed)
 
         # Construct the model runner
-        self.model_runner: GPUModelRunner = GPUModelRunner(
-            self.vllm_config, self.device)
+        self.model_runner: Union[DisaggVModelGPURunnerWrapper, GPUModelRunner,
+                                 DisaggLModelGPURunnerWrapper]
+        model_runner_class = GPUModelRunner
+        if self.separated_encode:
+            if self.instance_type == "encode":
+                model_runner_class = DisaggVModelGPURunnerWrapper
+            elif (self.instance_type == "prefill+decode"
+                  or self.instance_type == "prefill"):
+                model_runner_class = DisaggLModelGPURunnerWrapper
+        self.model_runner = model_runner_class(self.vllm_config, self.device)
 
         if self.rank == 0:
             # If usage stat is enabled, collect relevant info.
