@@ -221,8 +221,9 @@ class ECConnectorTemplate(ABC):
             encoder_cache: encoder cache in numpy array form
         """
         with self.use_cache_lock:
-            # logger.info(f"Arif: Add encoder cache {request_id}, {input_id}, ...")
-            # logger.info(f" - Cache to send: {self.cache_to_send}")
+            #logger.info(f"Arif: Add encoder cache {request_id}, {input_id}, ...")
+            #logger.info(f" - Cache to send: {self.cache_to_send}")
+            #logger.info(f" - Cache to avoid {self.cache_to_avoid}")
             if (request_id, input_id) in self.cache_to_send:
                 self.schedule_send_encoder_cache(request_id=request_id,
                                                 input_id=input_id,
@@ -251,8 +252,8 @@ class ECConnectorTemplate(ABC):
             input_id: index of the mm input amoung request's mm inputs
         """
         with self.use_cache_lock:
-            # logger.info("Arif: Trying to send encoder cache")
-            # logger.info(f" - Params {request_id}, {input_id}, {succesfull}")
+            #logger.info("Arif: Trying to send encoder cache")
+            #logger.info(f" - Params {request_id}, {input_id}, {succesfull}")
             if (request_id in self.encoder_cache
                     and input_id in self.encoder_cache[request_id]):
                 if succesfull:

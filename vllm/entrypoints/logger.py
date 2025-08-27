@@ -38,10 +38,10 @@ class RequestLogger:
             if prompt_token_ids is not None:
                 prompt_token_ids = prompt_token_ids[:max_log_len]
 
-        logger.info(
-            "Received request %s: prompt: %r, "
-            "params: %s, prompt_token_ids: %s, "
-            "prompt_embeds shape: %s, "
-            "lora_request: %s.", request_id, prompt, params, prompt_token_ids,
-            prompt_embeds.shape if prompt_embeds is not None else None,
-            lora_request)
+        # logger.info(
+        #     "Received request %s: prompt: %r, "
+        #     "params: %s, prompt_token_ids: %s, "
+        #     "prompt_embeds shape: %s, "
+        #     "lora_request: %s.", request_id, prompt, params, prompt_token_ids,
+        #     prompt_embeds.shape if prompt_embeds is not None else None,
+        #     lora_request)

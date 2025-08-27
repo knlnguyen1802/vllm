@@ -22,11 +22,11 @@ from typing_extensions import TypeIs
 
 import vllm.envs as envs
 from vllm.config import (BlockSize, CacheConfig, CacheDType, CompilationConfig,
-                         ConfigFormat, ConfigType, ConvertOption,
+                         ConfigFormat, ConfigType,
                          DecodingConfig, DetailedTraceModules, Device,
                          DeviceConfig, DistributedExecutorBackend, 
                          EPDDisaggConfig,
-                         GuidedDecodingBackend, HfOverrides, KVEventsConfig,
+                         GuidedDecodingBackendV1, HfOverrides, KVEventsConfig,
                          KVTransferConfig, LoadConfig, LogprobsMode,
                          LoRAConfig, ModelConfig, ModelDType, ModelImpl,
                          MultiModalConfig, ObservabilityConfig, ParallelConfig,
@@ -42,7 +42,7 @@ from vllm.test_utils import MODEL_WEIGHTS_S3_BUCKET, MODELS_ON_S3
 from vllm.transformers_utils.utils import check_gguf_file
 from vllm.utils import (STR_DUAL_CHUNK_FLASH_ATTN_VAL, FlexibleArgumentParser,
                         GiB_bytes, get_ip, is_in_ray_actor)
-
+from vllm.config import LoadFormat
 # yapf: enable
 
 if TYPE_CHECKING:
@@ -382,7 +382,7 @@ class EngineArgs:
     disable_hybrid_kv_cache_manager: bool = (
         SchedulerConfig.disable_hybrid_kv_cache_manager)
 
-    guided_decoding_backend: GuidedDecodingBackend = DecodingConfig.backend
+    guided_decoding_backend: GuidedDecodingBackendV1 = DecodingConfig.backend
     guided_decoding_disable_fallback: bool = DecodingConfig.disable_fallback
     guided_decoding_disable_any_whitespace: bool = \
         DecodingConfig.disable_any_whitespace

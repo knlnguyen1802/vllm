@@ -234,7 +234,7 @@ class MinPLogitsProcessor(LogitsProcessor):
                                             device="cpu",
                                             pin_memory=pin_memory)
         self.min_p_cpu = self.min_p_cpu_tensor.numpy()
-
+        logger.info(f"At min p logits processor the device is {device}")
         self.use_double_tensor = torch.device("cpu") != torch.device(device)
 
         if self.use_double_tensor:

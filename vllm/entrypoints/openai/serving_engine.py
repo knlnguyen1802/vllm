@@ -434,7 +434,7 @@ class OpenAIServing:
     ) -> Optional[ErrorResponse]:
 
         error_response = None
-
+        return None
         if self._is_model_supported(request.model):
             return None
         if request.model in self.models.lora_requests:
@@ -494,7 +494,7 @@ class OpenAIServing:
 
         if self._is_model_supported(request.model):
             return None
-
+        return None
         # if _check_model has been called earlier, this will be unreachable
         raise ValueError(f"The model `{request.model}` does not exist.")
 

@@ -9,7 +9,7 @@ from openai import AsyncOpenAI
 
 async def async_query_openai(query, model_path, port):
     aclient = AsyncOpenAI(
-        base_url=f"http://localhost:{str(port)}/v1", 
+        base_url=f"http://127.0.0.1:{str(port)}/v1", 
         api_key="EMPTY",
         timeout = 100000,
     )
@@ -23,8 +23,6 @@ async def async_query_openai(query, model_path, port):
             },
         ],
         temperature=0.0,
-        top_p=0.1,
-        max_tokens=512,
     )
     return completion.choices[0].message.content
 
@@ -72,11 +70,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="test")
     parser.add_argument(
-        "--model_path", type=str, default="/home/yx/models/Qwen/Qwen2.5-VL-3B-Instruct"
+        "--model_path", type=str, default=None
     )
     parser.add_argument("--image_path", type=str, default="./demo.jpeg")
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--port", type=int, default=1)
+    parser.add_argument("--port", type=int, default=10001)
     args, _ = parser.parse_known_args()
 
     asyncio.run(main(args))

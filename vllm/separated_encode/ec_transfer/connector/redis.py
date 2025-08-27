@@ -48,7 +48,7 @@ class RedisECConnector(ECConnectorTemplate):
             "succesfull": succesfull
         }
         rank = self._get_request_ranks(request_id)[0]
-        logger.debug(f"Sent prealloc notification -> {rank}, {request_id}, {succesfull}")        
+        #logger.info(f"Sent prealloc notification -> {rank}, {request_id}, {succesfull}")        
         self.redis_client.lpush(f"prealloc{rank}", 
                                 msgpack_numpy.packb(transfer_data))
 
@@ -61,7 +61,7 @@ class RedisECConnector(ECConnectorTemplate):
             "encoder_cache_size": encoder_cache_size
         }
         rank = self._get_request_ranks(request_id)[1]
-        logger.debug(f"Sent encode cache metadata -> {rank}, {request_id}")
+        #logger.info(f"Sent encode cache metadata -> {rank}, {request_id}")
         self.redis_client.lpush(f"cache_metas{rank}",
                                 msgpack_numpy.packb(transfer_data))
 
@@ -74,7 +74,7 @@ class RedisECConnector(ECConnectorTemplate):
             "encoder_cache": encoder_cache
         })
         rank = self._get_request_ranks(request_id)[1]
-        logger.debug(f"Arif: Sent encode cache -> {rank}, {request_id}")
+        #logger.info(f"Arif: Sent encode cache -> {rank}, {request_id}")
         self.redis_client.lpush(f"cache{rank}", transfer_data)
 
     def _recv_prealloc_notification(
@@ -87,7 +87,7 @@ class RedisECConnector(ECConnectorTemplate):
             transfered_data["input_id"],
             transfered_data["succesfull"]
         )
-        logger.debug(f"Received prealloc notif -> {self.rank}, {request_id}")
+        #logger.info(f"Received prealloc notif -> {self.rank}, {request_id}")
         maybe_send_cache_callback(request_id, input_id, succesfull)
 
     def _recv_encoder_cache_metas(
@@ -98,7 +98,7 @@ class RedisECConnector(ECConnectorTemplate):
         request_id, input_id, encoder_cache_size = (
             transfered_data["request_id"], transfered_data["input_id"],
             transfered_data["encoder_cache_size"])
-        logger.debug(f"Received encoder metadata -> {self.rank}, {request_id}")
+        #logger.info(f"Received encoder metadata -> {self.rank}, {request_id}")
         preallocate_callback(request_id, input_id, encoder_cache_size)
 
     def _recv_encoder_cache(
@@ -110,5 +110,5 @@ class RedisECConnector(ECConnectorTemplate):
         request_id, input_id, encoder_cache = (
             transfered_data["request_id"], transfered_data["input_id"],
             transfered_data["encoder_cache"])
-        logger.debug(f"Received encoder cache -> {self.rank}, {request_id}")
+        #logger.info(f"Received encoder cache -> {self.rank}, {request_id}")
         injection_callback(request_id, input_id, encoder_cache)

@@ -25,7 +25,6 @@ from vllm.logging_utils.dump_input import dump_engine_exception
 from vllm.lora.request import LoRARequest
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.separated_encode.sched.encoder_scheduler import EncoderScheduler
-from vllm.tasks import POOLING_TASKS, SupportedTask
 from vllm.transformers_utils.config import (
     maybe_register_config_serialize_by_value)
 from vllm.utils import make_zmq_socket, resolve_obj_by_qualname
@@ -76,6 +75,7 @@ class EngineCore:
 
         self.log_stats = log_stats
 
+        logger.info(f"At engine core the vllm config is {vllm_config}")
         # Setup Model.
         self.model_executor = executor_class(vllm_config)
         if executor_fail_callback is not None:
@@ -139,6 +139,7 @@ class EngineCore:
             logger.info("Batch queue is enabled with size %d",
                         self.batch_queue_size)
             self.batch_queue = queue.Queue(self.batch_queue_size)
+        logger.info(f"Creation of scheduler {self.scheduler}")
 
     def _initialize_kv_caches(
             self, vllm_config: VllmConfig) -> tuple[int, int, KVCacheConfig]:
