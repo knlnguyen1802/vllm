@@ -3,18 +3,17 @@
 """
 Define EC connector functionality mixin for model runners.
 """
-import copy
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import Generator  # noqa: UP035
 from typing import TYPE_CHECKING, Optional
 
-from vllm.config import VllmConfig
-from vllm.distributed.ec_transfer import (get_ec_transfer,
-                                          has_ec_transfer)
+import torch
+
+from vllm.distributed.ec_transfer import get_ec_transfer, has_ec_transfer
 from vllm.distributed.ec_transfer.ec_connector.base import ECConnectorBase
 from vllm.logger import init_logger
 from vllm.v1.outputs import ECConnectorOutput
-import torch
+
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
 
@@ -34,7 +33,7 @@ class ECConnectorModelRunnerMixin:
             ec_connector.bind_connector_metadata(
                 scheduler_output.ec_connector_metadata)
             ec_connector.start_load_caches()
-    
+
     @staticmethod
     def maybe_save_ec_to_connector(
         encoder_cache: dict[str, torch.Tensor],
@@ -44,7 +43,7 @@ class ECConnectorModelRunnerMixin:
             logger.debug("Not have ec transfer please check")
             return
         connector = get_ec_transfer()
-        connector.save_caches(encoder_cache=encoder_cache,mm_hash=mm_hash)
+        connector.save_caches(encoder_cache=encoder_cache, mm_hash=mm_hash)
 
     @staticmethod
     def maybe_wait_for_ec_save() -> None:
@@ -66,7 +65,8 @@ class ECConnectorModelRunnerMixin:
         **kwargs,
     ) -> AbstractContextManager[Optional[ECConnectorOutput]]:
         return ECConnectorModelRunnerMixin._get_ec_connector_output(
-            scheduler_output, **kwargs) if has_ec_transfer() else nullcontext()
+            scheduler_output, **
+            kwargs) if has_ec_transfer() else nullcontext()
 
     # This context manager must be used within an active forward context.
     # It encapsulates the entire EC conector lifecycle within execute_model

@@ -13,15 +13,18 @@ Design doc: <https://docs.google.com/document/d/1aed8KtC6XkXtdoV87pWT0a8OJlZ-Cpn
 ## 1  Motivation
 
 ### 1. Independent, fine-grained scaling
+
 * Vision encoders are lightweight, while language models are orders of magnitude larger.  
 * The language model can be parallelised without affecting the encoder fleet.  
 * Encoder nodes can be added or removed independently.
 
 ### 2. Lower time-to-first-token (TTFT)
+
 * Language-only requests bypass the vision encoder entirely.  
 * Encoder output is injected only at required attention layers, shortening the pre-fill critical path.
 
 ### 3. Cross-process reuse and caching
+
 * In-process encoders confine reuse to a single worker.  
 * A remote, shared cache lets any worker retrieve existing embeddings, eliminating redundant computation.
 
@@ -30,13 +33,12 @@ Design doc: <https://docs.google.com/document/d/1aed8KtC6XkXtdoV87pWT0a8OJlZ-Cpn
 ## 2  Usage Example
 
 The current reference pathway is **SharedStorageConnector**.  
-Below ready-to-run scripts shows the workflow:
+Below ready-to-run scripts show the workflow:
 
-1 Encoder instance + 1 PD instance:
-`examples/online_serving/disaggregated_encoder/shared_storage_connector/disagg_encoder_example.sh`
-
-1 Encoder instance + 1 Prefill instance + 1 Decode instance:
-`examples/online_serving/disaggregated_encoder/shared_storage_connector/disagg_epd_example.sh`
+* 1 Encoder instance + 1 PD instance:  
+  `examples/online_serving/disaggregated_encoder/shared_storage_connector/disagg_encoder_example.sh`
+* 1 Encoder instance + 1 Prefill instance + 1 Decode instance:  
+  `examples/online_serving/disaggregated_encoder/shared_storage_connector/disagg_epd_example.sh`
 
 ---
 
@@ -44,9 +46,9 @@ Below ready-to-run scripts shows the workflow:
 
 Disaggregated encoding is implemented by running two parts:
 
-* **Encoder instance** – a vLLM instance to performs vision encoding.  
-* **Prefill/Decode (PD) instance(s)** – runs language pre-fill and decode.
-  * PD can be in either a single normal instance with `disagg_encoder_example.sh` (E->PD) or in disaggregated instances with `disagg_epd_example.sh` (E->P->D)
+* **Encoder instance** – a vLLM instance that performs vision encoding.  
+* **Prefill/Decode (PD) instance(s)** – runs language pre-fill and decode.  
+    * PD can be in either a single normal instance with `disagg_encoder_example.sh` (E→PD) or in disaggregated instances with `disagg_epd_example.sh` (E→P→D)
 
 A connector transfers encoder-cache (EC) embeddings from the encoder instance to the PD instance.  
 All related code is under `vllm/distributed/ec_transfer`.
@@ -54,16 +56,15 @@ All related code is under `vllm/distributed/ec_transfer`.
 ### Key abstractions
 
 * **ECConnector** – interface for retrieving EC caches produced by the encoder.  
-  * *Scheduler role* – checks cache existence and schedules loads.  
-  * *Worker role* – loads the embeddings into memory.
+    * *Scheduler role* – checks cache existence and schedules loads.  
+    * *Worker role* – loads the embeddings into memory.
 
-Here is a figure illustrating disaggregate encoder flow:
+Here is a figure illustrating the disaggregated-encoder flow:
 
 ![Disaggregated Encoder Flow](../assets/features/disagg_encoder/disagg_encoder_flow.png)
 
-For the PD disaggregation part, the Prefill instance receive cache exactly the same as the disaggregate encoder flow above. Prefill instance executes 1 step (prefill -> 1 token output) and then transfer KV cache to the Decode instance for the remaining execution. The KV transfer part purely happens after the execute of the PDinstance.
+For the PD disaggregation part, the Prefill instance receives cache exactly the same as the disaggregated-encoder flow above. The Prefill instance executes one step (prefill → one-token output) and then transfers the KV cache to the Decode instance for the remaining execution. The KV-transfer part happens only after the PD instance finishes its step.
 
-`docs/features/disagg_prefill.md` shows the brief idea about the disaggregated prefill (v0) 
+`docs/features/disagg_prefill.md` shows the brief idea behind the disaggregated prefill (v0).
 
-
-We create the example setup with the **NixlConnector** from `vllm/distributed/kv_transfer/kv_connector/v1/nixl_connector.py` and referred to the `tests/v1/kv_connector/nixl_integration/toy_proxy_server.py` to facilitate the kv transfer between P and D;
+We create the example setup with the **NixlConnector** from `vllm/distributed/kv_transfer/kv_connector/v1/nixl_connector.py` and reference `tests/v1/kv_connector/nixl_integration/toy_proxy_server.py` to facilitate KV transfer between P and D.

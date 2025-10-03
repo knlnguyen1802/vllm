@@ -100,7 +100,9 @@ CUDA_VISIBLE_DEVICES="$GPU_E" vllm serve "$MODEL" \
 ###############################################################################
 # Prefill+Decode worker
 ###############################################################################
-CUDA_VISIBLE_DEVICES="$GPU_PD" VLLM_NIXL_SIDE_CHANNEL_PORT=6000 vllm serve "$MODEL" \
+CUDA_VISIBLE_DEVICES="$GPU_PD" \
+VLLM_NIXL_SIDE_CHANNEL_PORT=6000 \
+    vllm serve "$MODEL" \
     --gpu-memory-utilization 0.7 \
     --port "$PREFILL_DECODE_PORT" \
     --enable-request-id-headers \

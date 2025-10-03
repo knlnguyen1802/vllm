@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """
 disagg_encoder_proxy.py
 
@@ -24,13 +26,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
 import os
 import random
 import uuid
-from copy import deepcopy
-from typing import Any, AsyncIterator, List, Optional
+from collections.abc import AsyncIterator
+from typing import Optional
 
 import aiohttp
 import uvicorn
@@ -56,14 +57,14 @@ decode_session: Optional[aiohttp.ClientSession] = None
 MM_TYPES = {"image_url", "audio_url", "input_audio"}
 
 
-def extract_mm_items(request_data: dict) -> List[dict]:
+def extract_mm_items(request_data: dict) -> list[dict]:
     """
     Return *all* image/audio items that appear anywhere in `messages`.
 
     Each returned dict looks like:
         { "type": "image_url", "image_url": {...} }
     """
-    items: List[dict] = []
+    items: list[dict] = []
     for msg in request_data.get("messages", []):
         content = msg.get("content")
         if not isinstance(content, list):
@@ -77,7 +78,7 @@ def extract_mm_items(request_data: dict) -> List[dict]:
 
 async def fanout_encoder_primer(
     orig_request: dict,
-    e_urls: List[str],
+    e_urls: list[str],
     request_id: str,
 ) -> None:
     """
@@ -162,7 +163,7 @@ async def on_shutdown() -> None:
 
 
 async def forward_non_stream(
-    req_data: dict, req_id: str, e_urls: List[str], pd_url: str
+    req_data: dict, req_id: str, e_urls: list[str], pd_url: str
 ) -> dict:
     await fanout_encoder_primer(req_data, e_urls, req_id)
 
@@ -175,7 +176,7 @@ async def forward_non_stream(
 
 
 async def forward_stream(
-    req_data: dict, req_id: str, e_urls: List[str], pd_url: str
+    req_data: dict, req_id: str, e_urls: list[str], pd_url: str
 ) -> AsyncIterator[str]:
     await fanout_encoder_primer(req_data, e_urls, req_id)
 
@@ -262,13 +263,13 @@ async def _post_if_available(
 
     Returns
     -------
-    • The decoded JSON body on success (2xx)  
-    • None if the endpoint does not exist (404)  
+    • The decoded JSON body on success (2xx)
+    • None if the endpoint does not exist (404)
     • Raises for anything else.
     """
     try:
         resp = await session.post(url, json=payload, headers=headers)
-        if resp.status == 404:           # profiling disabled on that server
+        if resp.status == 404:  # profiling disabled on that server
             logger.warning("Profiling endpoint missing on %s", url)
             return None
         resp.raise_for_status()
@@ -307,8 +308,8 @@ async def _profile_cmd(cmd: str, payload: dict, e_url: str, pd_url: str):
         )
 
     return {
-        "encode": encode_res,   # may be None
-        "decode": decode_res,   # may be None
+        "encode": encode_res,  # may be None
+        "decode": decode_res,  # may be None
     }
 
 
@@ -348,8 +349,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    app.state.e_urls = [u.strip() for u in args.encode_servers_urls.split(",") if u.strip()]
-    app.state.pd_urls = [u.strip() for u in args.prefill_decode_servers_urls.split(",") if u.strip()]
+    app.state.e_urls = [
+        u.strip() for u in args.encode_servers_urls.split(",") if u.strip()
+    ]
+    app.state.pd_urls = [
+        u.strip() for u in args.prefill_decode_servers_urls.split(",") if u.strip()
+    ]
 
     logger.info("Proxy listening on %s:%s", args.host, args.port)
     logger.info("Encode servers: %s", app.state.e_urls)
