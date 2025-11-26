@@ -180,8 +180,8 @@ class PlaceholderRange:
             # Prefix sum with a leading 0 creates an exclusive index prefix.
             self.embed_index = torch.cat(
                 [
-                    torch.zeros(1, dtype=torch.int64, device=is_embed.device),
-                    is_embed.to(torch.int64).cumsum(dim=0),
+                    torch.zeros(1, dtype=torch.int64, device=self.is_embed.device),
+                    self.is_embed.to(torch.int64).cumsum(dim=0),
                 ]
             )
         return None

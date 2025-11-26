@@ -251,6 +251,7 @@ class ExecuteModelState(NamedTuple):
     aux_hidden_states: list[torch.Tensor] | None
     ec_connector_output: ECConnectorOutput | None
 
+
 class GPUModelRunner(
     LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnectorModelRunnerMixin
 ):
@@ -2063,10 +2064,7 @@ class GPUModelRunner(
                 )
                 # Only gather valid is_embed in rage
                 mm_embeds_item = gather_mm_placeholders(
-                    encoder_output,
-                    start_idx,
-                    end_idx,
-                    pos_info.embed_index
+                    encoder_output, start_idx, end_idx, pos_info.embed_index
                 )
                 mm_embeds_req.append(mm_embeds_item)
 

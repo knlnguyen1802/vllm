@@ -863,8 +863,10 @@ class Scheduler(SchedulerInterface):
         num_tokens_to_stored = 0
         for i, mm_feature in enumerate(mm_features):
             start_pos = mm_feature.mm_position.offset
-            #NOTE(Long) num_scheduler_encoder_tokens is used for scheduling of both embed and non embed token
-            # num_stored_encoder_tokens is the actual number of embed token stored in the encoder cache
+            # NOTE(Long) num_scheduler_encoder_tokens is used for 
+            # scheduling of both embed and non embed token
+            # num_stored_encoder_tokens is the actual number 
+            # of embed token stored in the encoder cache
             num_scheduler_encoder_tokens = mm_feature.mm_position.length
             num_stored_encoder_tokens = mm_feature.mm_position.get_num_embeds()
             # The encoder output is needed if the two ranges overlap:
