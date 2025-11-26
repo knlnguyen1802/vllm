@@ -216,7 +216,7 @@ def gather_mm_placeholders(
     if embed_index is None:
         return placeholders
 
-    return placeholders[embed_index[start_idx], embed_index[end_idx]]
+    return placeholders[embed_index[start_idx]:embed_index[end_idx]]
 
 
 def add_kv_sharing_layers_to_kv_cache_groups(

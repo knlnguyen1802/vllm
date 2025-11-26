@@ -2064,7 +2064,7 @@ class GPUModelRunner(
                 )
                 # Only gather valid is_embed in rage
                 mm_embeds_item = gather_mm_placeholders(
-                    encoder_output, start_idx, end_idx, pos_info.embed_index
+                    encoder_output, start_idx, end_idx, pos_info.get_embeds_index()
                 )
                 mm_embeds_req.append(mm_embeds_item)
 
