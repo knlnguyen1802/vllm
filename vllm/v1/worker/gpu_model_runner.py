@@ -158,7 +158,6 @@ from .utils import (
     bind_kv_cache,
     gather_mm_placeholders,
     sanity_check_mm_encoder_outputs,
-    scatter_mm_placeholders,
 )
 
 if TYPE_CHECKING:
@@ -251,7 +250,6 @@ class ExecuteModelState(NamedTuple):
     sample_hidden_states: torch.Tensor
     aux_hidden_states: list[torch.Tensor] | None
     ec_connector_output: ECConnectorOutput | None
-
 
 class GPUModelRunner(
     LoRAModelRunnerMixin, KVConnectorModelRunnerMixin, ECConnectorModelRunnerMixin
@@ -2002,10 +2000,7 @@ class GPUModelRunner(
 
         # Cache the encoder outputs by mm_hash
         for (mm_hash, pos_info), output in zip(mm_hashes_pos, encoder_outputs):
-            self.encoder_cache[mm_hash] = scatter_mm_placeholders(
-                output,
-                is_embed=pos_info.is_embed,
-            )
+            self.encoder_cache[mm_hash] = output
             logger.debug("Finish execute for mm hash %s", mm_hash)
             self.maybe_save_ec_to_connector(self.encoder_cache, mm_hash)
 
@@ -2035,16 +2030,15 @@ class GPUModelRunner(
             for mm_feature in req_state.mm_features:
                 pos_info = mm_feature.mm_position
                 start_pos = pos_info.offset
-                num_encoder_tokens = pos_info.length
-
+                num_scheduled_encoder_tokens = pos_info.length
                 # The encoder output is needed if the two ranges overlap:
                 # [num_computed_tokens,
                 #  num_computed_tokens + num_scheduled_tokens) and
-                # [start_pos, start_pos + num_encoder_tokens)
+                # [start_pos, start_pos + num_scheduled_encoder_tokens)
                 if start_pos >= num_computed_tokens + num_scheduled_tokens:
                     # The encoder output is not needed in this step.
                     break
-                if start_pos + num_encoder_tokens <= num_computed_tokens:
+                if start_pos + num_scheduled_encoder_tokens <= num_computed_tokens:
                     # The encoder output is already processed and stored
                     # in the decoder's KV cache.
                     continue
@@ -2052,7 +2046,7 @@ class GPUModelRunner(
                 start_idx = max(num_computed_tokens - start_pos, 0)
                 end_idx = min(
                     num_computed_tokens - start_pos + num_scheduled_tokens,
-                    num_encoder_tokens,
+                    num_scheduled_encoder_tokens,
                 )
                 assert start_idx < end_idx
 
@@ -2067,10 +2061,12 @@ class GPUModelRunner(
                 is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] = (
                     True if is_embed is None else is_embed
                 )
-
+                # Only gather valid is_embed in rage
                 mm_embeds_item = gather_mm_placeholders(
-                    encoder_output[start_idx:end_idx],
-                    is_embed=is_embed,
+                    encoder_output,
+                    start_idx,
+                    end_idx,
+                    pos_info.embed_index
                 )
                 mm_embeds_req.append(mm_embeds_item)
 

@@ -201,37 +201,11 @@ def sanity_check_mm_encoder_outputs(
     )
 
 
-def scatter_mm_placeholders(
-    embeds: torch.Tensor,
-    is_embed: torch.Tensor | None,
-) -> torch.Tensor:
-    """
-    Scatter the multimodal embeddings into a contiguous tensor that represents
-    the placeholder tokens.
-
-    [`vllm.multimodal.processing.PromptUpdateDetails.is_embed`][].
-
-    Args:
-        embeds: The multimodal embeddings.
-            Shape: `(num_embeds, embed_dim)`
-        is_embed: A boolean mask indicating which positions in the placeholder
-            tokens need to be filled with multimodal embeddings.
-            Shape: `(num_placeholders, num_embeds)`
-    """
-    if is_embed is None:
-        return embeds
-
-    placeholders = embeds.new_full(
-        (is_embed.shape[0], embeds.shape[-1]),
-        fill_value=torch.nan,
-    )
-    placeholders[is_embed] = embeds
-    return placeholders
-
-
 def gather_mm_placeholders(
     placeholders: torch.Tensor,
-    is_embed: torch.Tensor | None,
+    start_idx: int,
+    end_idx: int,
+    embed_index: Optional["torch.Tensor"],
 ) -> torch.Tensor:
     """
     Reconstructs the embeddings from the placeholder tokens.
@@ -239,10 +213,10 @@ def gather_mm_placeholders(
     This is the operation of [`scatter_mm_placeholders`]
     [vllm.v1.worker.utils.scatter_mm_placeholders].
     """
-    if is_embed is None:
+    if embed_index is None:
         return placeholders
 
-    return placeholders[is_embed]
+    return placeholders[embed_index[start_index],embed_index[end_idx]]
 
 
 def add_kv_sharing_layers_to_kv_cache_groups(

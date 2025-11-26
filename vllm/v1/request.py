@@ -206,8 +206,8 @@ class Request:
 
     def get_num_encoder_tokens(self, input_id: int) -> int:
         assert input_id < len(self.mm_features)
-        num_tokens = self.mm_features[input_id].mm_position.length
-        return num_tokens
+        num_embed_tokens = self.mm_features[input_id].mm_position.get_num_embeds()
+        return num_embed_tokens
 
     def record_event(
         self,

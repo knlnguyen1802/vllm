@@ -168,6 +168,24 @@ class PlaceholderRange:
     between `offset` and `offset + length` to assign embeddings to.
     """
 
+    embed_index: Optional["torch.Tensor"] = None
+    """
+    A tensor map the index of a position to the nearest embed index before it
+    """
+
+    def get_embeds_index(self) -> Optional["torch.Tensor"]:
+        if self.embed_index is not None:
+            return self.embed_index
+        if self.is_embed is not None:
+            # Prefix sum with a leading 0 creates an exclusive index prefix.
+            self.embed_index = torch.cat(
+                [
+                    torch.zeros(1, dtype=torch.int64, device=is_embed.device),
+                    is_embed.to(torch.int64).cumsum(dim=0),
+                ]
+            )
+        return None
+
     def get_num_embeds(self) -> int:
         if self.is_embed is None:
             return self.length

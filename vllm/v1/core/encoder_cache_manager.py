@@ -104,7 +104,7 @@ class EncoderCacheManager:
         request: Request,
         input_id: int,
         encoder_compute_budget: int,
-        num_tokens_to_schedule: int,
+        num_tokens_to_stored: int,
     ) -> bool:
         """Check if there's sufficient cache space for a multimodal input.
         If there is, return True and update EncoderCacheManager state.
@@ -123,8 +123,9 @@ class EncoderCacheManager:
             input_id: Index of the multimodal input within the request.
             encoder_compute_budget: Number of encoder tokens allowed to be
                 computed when this method is invoked.
-            num_tokens_to_schedule: Number of tokens already scheduled to be
+            num_tokens_to_stored: Number of tokens already scheduled to be
                 allocated with cache space when this method is invoked.
+                This is the sum of embed token, not the position length
 
         Returns:
             True if there's enough capacity to hold the encoder output for this
@@ -140,7 +141,7 @@ class EncoderCacheManager:
         if num_tokens > encoder_compute_budget:
             return False
 
-        num_tokens += num_tokens_to_schedule
+        num_tokens += num_tokens_to_stored
 
         # Enough free slots
         if num_tokens <= self.num_free_slots:

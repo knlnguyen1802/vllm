@@ -223,7 +223,6 @@ class Scheduler(SchedulerInterface):
         req_index = 0
         while req_index < len(self.running) and token_budget > 0:
             request = self.running[req_index]
-
             num_new_tokens = (
                 request.num_tokens_with_spec
                 + request.num_output_placeholders
@@ -498,6 +497,7 @@ class Scheduler(SchedulerInterface):
                     # `request.num_prompt_tokens` to consider the resumed
                     # requests, which have output tokens.
                     num_new_tokens = request.num_tokens - num_computed_tokens
+
                     threshold = self.scheduler_config.long_prefill_token_threshold
                     if 0 < threshold < num_new_tokens:
                         num_new_tokens = threshold
@@ -860,14 +860,16 @@ class Scheduler(SchedulerInterface):
         # multiple encoder inputs per request), we need to create temporary
         # trackers for accounting at the encoder input level.
         mm_hashes_to_schedule = set()
-        num_tokens_to_schedule = 0
+        num_tokens_to_stored = 0
         for i, mm_feature in enumerate(mm_features):
             start_pos = mm_feature.mm_position.offset
-            num_encoder_tokens = mm_feature.mm_position.length
-
+            #NOTE(Long) num_scheduler_encoder_tokens is used for scheduling of both embed and non embed token
+            # num_stored_encoder_tokens is the actual number of embed token stored in the encoder cache
+            num_scheduler_encoder_tokens = mm_feature.mm_position.length
+            num_stored_encoder_tokens = mm_feature.mm_position.get_num_embeds()
             # The encoder output is needed if the two ranges overlap:
             # [num_computed_tokens, num_computed_tokens + num_new_tokens) and
-            # [start_pos, start_pos + num_encoder_tokens)
+            # [start_pos, start_pos + num_scheduler_encoder_tokens)
             if start_pos >= num_computed_tokens + num_new_tokens:
                 # The encoder input is not needed in this step.
                 break
@@ -887,7 +889,7 @@ class Scheduler(SchedulerInterface):
                 # decoder tokens (num_computed_tokens > 0), then we know we
                 # already calculated encoder inputs and can skip here.
                 continue
-            elif start_pos + num_encoder_tokens <= num_computed_tokens:
+            elif start_pos + num_scheduler_encoder_tokens <= num_computed_tokens:
                 # The encoder input is already computed and stored
                 # in the decoder's KV cache.
                 continue
@@ -912,13 +914,13 @@ class Scheduler(SchedulerInterface):
                 self.scheduler_config.disable_chunked_mm_input
                 and num_computed_tokens < start_pos
                 and (num_computed_tokens + num_new_tokens)
-                < (start_pos + num_encoder_tokens)
+                < (start_pos + num_scheduler_encoder_tokens)
             ):
                 num_new_tokens = start_pos - num_computed_tokens
                 break
 
             if not self.encoder_cache_manager.can_allocate(
-                request, i, encoder_compute_budget, num_tokens_to_schedule
+                request, i, encoder_compute_budget, num_tokens_to_stored
             ):
                 # The encoder cache is full or the encoder budget is exhausted.
                 # NOTE(woosuk): We assume that the encoder input tokens should
@@ -939,11 +941,11 @@ class Scheduler(SchedulerInterface):
             if self.ec_connector is not None and remote_cache_has_item[i]:
                 mm_hashes_to_schedule.add(request.mm_features[i].identifier)
                 external_load_encoder_input.append(i)
-                num_tokens_to_schedule += num_encoder_tokens
+                num_tokens_to_stored += num_stored_encoder_tokens
                 continue
 
-            num_tokens_to_schedule += num_encoder_tokens
-            encoder_compute_budget -= num_encoder_tokens
+            num_tokens_to_stored += num_stored_encoder_tokens
+            encoder_compute_budget -= num_stored_encoder_tokens
             mm_hashes_to_schedule.add(request.mm_features[i].identifier)
             encoder_inputs_to_schedule.append(i)
 

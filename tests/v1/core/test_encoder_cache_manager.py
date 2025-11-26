@@ -160,21 +160,21 @@ def test_schedule_request_multi_images_respect_space_limit():
     req = MockRequest("reqA", ["a", "b"], [5, 6])
     compute_budget = 100
 
-    num_tokens_to_schedule = 0
-    assert manager.can_allocate(req, 0, compute_budget, num_tokens_to_schedule)
-    num_tokens_to_schedule += req.get_num_encoder_tokens(0)
+    num_tokens_to_stored = 0
+    assert manager.can_allocate(req, 0, compute_budget, num_tokens_to_stored)
+    num_tokens_to_stored += req.get_num_encoder_tokens(0)
     compute_budget -= req.get_num_encoder_tokens(0)
 
-    assert not manager.can_allocate(req, 1, compute_budget, num_tokens_to_schedule)
+    assert not manager.can_allocate(req, 1, compute_budget, num_tokens_to_stored)
 
 
 def test_schedule_request_multi_images_respect_compute_limit():
     manager = EncoderCacheManager(cache_size=100)
     req = MockRequest("reqA", ["a", "b"], [5, 6])
     compute_budget = 10
-    num_tokens_to_schedule = 0
-    assert manager.can_allocate(req, 0, compute_budget, num_tokens_to_schedule)
-    num_tokens_to_schedule += req.get_num_encoder_tokens(0)
+    num_tokens_to_stored = 0
+    assert manager.can_allocate(req, 0, compute_budget, num_tokens_to_stored)
+    num_tokens_to_stored += req.get_num_encoder_tokens(0)
     compute_budget -= req.get_num_encoder_tokens(0)
 
-    assert not manager.can_allocate(req, 1, compute_budget, num_tokens_to_schedule)
+    assert not manager.can_allocate(req, 1, compute_budget, num_tokens_to_stored)
