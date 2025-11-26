@@ -139,7 +139,7 @@ The UUID will be used to identify the item for all caching purposes
 """
 
 
-@dataclass(frozen=True)
+@dataclass
 class PlaceholderRange:
     """
     Placeholder location information for multi-modal data.
