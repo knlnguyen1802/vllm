@@ -5,7 +5,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from multiprocessing.synchronize import Lock as LockType
-from typing import TYPE_CHECKING, Generic, TypeAlias, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, Optional, TypeAlias, TypeVar, cast
 
 import torch
 from typing_extensions import override
@@ -225,6 +225,23 @@ class BaseMultiModalCache(ABC, Generic[_I, _O]):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: _I | None = None
+    ) -> None:
+        """
+        Update the cache eviction order for a multi-modal item.
+
+        This is used to touch the item in the cache without changing
+        its value.
+
+        Args:
+            mm_hash: The hash of the multi-modal item.
+            mm_item: The multi-modal item itself. This is optional and
+                may not be needed by some cache implementations.
+        """
+        raise NotImplementedError
+
     def get_and_update(
         self,
         mm_items: Sequence[_I],
@@ -354,6 +371,12 @@ class MultiModalProcessorOnlyCache(BaseMultiModalProcessorCache):
         return mm_item
 
     @override
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: Optional["MultiModalProcessorCacheInItem"] = None
+    ) -> None:
+        self._cache.touch(mm_hash)
+
+    @override
     def clear_cache(self) -> None:
         self._cache.clear()
 
@@ -406,6 +429,12 @@ class MultiModalProcessorSenderCache(BaseMultiModalProcessorCache):
         self._cache[mm_hash] = MultiModalProcessorCacheItemMetadata(*mm_item)
 
         return mm_item
+
+    @override
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: Optional["MultiModalProcessorCacheInItem"] = None
+    ) -> None:
+        self._cache.touch(mm_hash)
 
     @override
     def clear_cache(self) -> None:
@@ -500,6 +529,15 @@ class ShmObjectStoreSenderCache(BaseMultiModalProcessorCache):
             # In this case we log the error and keep the original mm_input.
             logger.debug("Failed to cache mm_input with hash %s: %s", mm_hash, e)
             return mm_item
+
+    @override
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: Optional["MultiModalProcessorCacheInItem"] = None
+    ) -> None:
+        """Touch the item in shared memory cache to prevent eviction.
+        Increments writer_flag on sender side."""
+        if self._shm_cache.is_cached(mm_hash):
+            self._shm_cache.touch(mm_hash, is_writer=True)
 
     @override
     def clear_cache(self) -> None:
@@ -610,7 +648,14 @@ class BaseMultiModalReceiverCache(
         self,
         mm_features: list["MultiModalFeatureSpec"],
     ) -> list["MultiModalFeatureSpec"]:
-        """Update multimodal features with cached encoder outputs."""
+        """
+        Update multimodal features with cached encoder outputs.
+        Touch all identifier at first before update to avoid
+        item in updated list evict during update.
+        """
+        for feature in mm_features:
+            self.update_cache_item_eviction_order(feature.identifier, feature.data)
+
         for feature in mm_features:
             feature.data = self.get_and_update_item(feature.data, feature.identifier)
         return mm_features
@@ -650,6 +695,12 @@ class MultiModalReceiverCache(BaseMultiModalReceiverCache):
 
         self._cache[mm_hash] = mm_item
         return mm_item
+
+    @override
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: Optional["MultiModalKwargsItem"] = None
+    ) -> None:
+        self._cache.touch(mm_hash)
 
     @override
     def clear_cache(self) -> None:
@@ -702,6 +753,20 @@ class ShmObjectStoreReceiverCache(BaseMultiModalReceiverCache):
             return self._shm_cache.get(address, monotonic_id)
 
         return mm_item
+
+    @override
+    def update_cache_item_eviction_order(
+        self, mm_hash: str, mm_item: Optional["MultiModalKwargsItem"] = None
+    ) -> None:
+        """Touch the item in shared memory cache to prevent eviction.
+        Increments reader_count on receiver side."""
+        assert mm_item is not None
+        if "address" in mm_item:
+            address = cast(int, mm_item["address"].data)
+            monotonic_id = cast(int, mm_item["monotonic_id"].data)
+            self._shm_cache.touch(
+                mm_hash, address=address, monotonic_id=monotonic_id, is_writer=False
+            )
 
     @override
     def clear_cache(self) -> None:
