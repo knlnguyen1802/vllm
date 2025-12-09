@@ -181,7 +181,7 @@ cython_debug/
 .idea/
 
 # VSCode
-.vscode/
+# .vscode/ directory is tracked to provide project configuration
 
 # Claude
 CLAUDE.md

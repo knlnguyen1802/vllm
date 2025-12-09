@@ -33,6 +33,9 @@ git clone https://github.com/vllm-project/vllm.git
 cd vllm
 ```
 
+!!! tip "IDE Setup"
+    If you're using Visual Studio Code, check out our [VSCode Setup Guide](./vscode_setup.md) for a streamlined development experience with pre-configured settings, tasks, and debugging configurations.
+
 Then, configure your Python virtual environment.
 
 --8<-- "docs/getting_started/installation/python_env_setup.inc.md"

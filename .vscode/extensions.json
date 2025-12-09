@@ -1,0 +1,33 @@
+{
+  "recommendations": [
+    // Python development
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    
+    // C++ and CUDA development
+    "ms-vscode.cpptools",
+    "ms-vscode.cpptools-extension-pack",
+    "xaver.clang-format",
+    "nvidia.nsight-vscode-edition",
+    
+    // Version control
+    "eamodio.gitlens",
+    
+    // Documentation
+    "yzhang.markdown-all-in-one",
+    "davidanson.vscode-markdownlint",
+    
+    // Testing
+    "littlefoxteam.vscode-python-test-adapter",
+    
+    // Docker (for containerized development)
+    "ms-azuretools.vscode-docker",
+    
+    // YAML support
+    "redhat.vscode-yaml",
+    
+    // TOML support
+    "tamasfe.even-better-toml"
+  ]
+}
