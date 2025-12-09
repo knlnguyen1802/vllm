@@ -297,7 +297,7 @@ If code doesn't format automatically on save:
 
 - `Ctrl+P` - Quick file open
 - `Ctrl+Shift+F` - Search across files
-- `Ctrl+` ` - Toggle terminal
+- ``Ctrl+` `` - Toggle terminal
 - `Ctrl+B` - Toggle sidebar
 - `F12` - Go to definition
 - `Alt+Left/Right` - Navigate back/forward
