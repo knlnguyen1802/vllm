@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import contextlib
 import json
 import os
 import threading
@@ -316,10 +317,8 @@ class ECExampleConnector(ECConnectorBase):
                 for mm_hash in processed_saves:
                     self._mm_datas_need_saves.pop(mm_hash, None)
                 for mm_hash in processed_updates:
-                    try:
+                    with contextlib.suppress(ValueError):
                         self._mm_datas_need_update_meta.remove(mm_hash)
-                    except ValueError:
-                        pass
 
     def build_connector_meta(
         self,
@@ -461,10 +460,8 @@ class ECExampleConnector(ECConnectorBase):
                                 )
                             )
                             lf.flush()
-                            try:
+                            with contextlib.suppress(Exception):
                                 os.fsync(lf.fileno())
-                            except Exception:
-                                pass
                         logger.debug("Created log file for %s", mm_meta.mm_hash)
                     except Exception as e:
                         logger.warning(
