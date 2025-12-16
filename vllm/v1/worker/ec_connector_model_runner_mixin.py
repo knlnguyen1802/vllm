@@ -31,7 +31,6 @@ class ECConnectorModelRunnerMixin:
         mm_hash: str,
     ):
         if not has_ec_transfer():
-            logger.debug("Not have ec transfer please check")
             return
         connector = get_ec_transfer()
         connector.save_caches(encoder_cache=encoder_cache, mm_hash=mm_hash)
@@ -85,3 +84,13 @@ class ECConnectorModelRunnerMixin:
             )
 
             ec_connector.clear_connector_metadata()
+    
+    @staticmethod
+    def maybe_update_ec_connector_state(
+        encoder_cache: dict[str, torch.Tensor]
+    ):
+        if not has_ec_transfer():
+            return
+        connector = get_ec_transfer()
+        connector.maybe_update_remote_cache_state(encoder_cache)
+    
