@@ -389,7 +389,7 @@ class ECExampleConnector(ECConnectorBase):
         foldername = self._generate_foldername_debug(mm_hash)
         return os.path.join(foldername, "meta.log")
 
-    def update_mm_meta_write(self, mm_meta: MMMeta) -> bool:
+    def update_mm_meta_write(self, mm_meta: MMMeta) -> None:
         """
         Save or update the metadata file for the given mm_hash.
         If the file exists, increment `write_count`.
@@ -406,7 +406,7 @@ class ECExampleConnector(ECConnectorBase):
                 "disabled for %s",
                 mm_meta.mm_hash,
             )
-            return
+            return None
 
         meta_filename = self._generate_meta_filename(mm_meta.mm_hash)
 
@@ -472,8 +472,10 @@ class ECExampleConnector(ECConnectorBase):
                             mm_meta.mm_hash,
                             str(e),
                         )
+        
+        return None
 
-    def update_mm_meta_read(self, mm_hash: str) -> bool:
+    def update_mm_meta_read(self, mm_hash: str) -> None:
         """
         Load the metadata file for the given mm_hash and increment read_count.
         Uses exclusive file locking to prevent race conditions.
@@ -493,7 +495,7 @@ class ECExampleConnector(ECConnectorBase):
                 "disabled for %s",
                 mm_hash,
             )
-            return
+            return None
 
         meta_filename = self._generate_meta_filename(mm_hash)
 
@@ -504,7 +506,7 @@ class ECExampleConnector(ECConnectorBase):
                     "Meta file not found for %s (may have been deleted)",
                     mm_hash,
                 )
-                return
+                return None
 
             try:
                 with open(meta_filename, "r+") as f:
@@ -540,8 +542,11 @@ class ECExampleConnector(ECConnectorBase):
 
                     if read_count == write_count:
                         self.maybe_deallocate_cache(meta)
+                    
+                    return None
             except json.JSONDecodeError as e:
                 logger.error("Failed to decode meta file for %s: %s", mm_hash, str(e))
+                return None
 
 
     def maybe_deallocate_cache(self, mm_meta: MMMeta) -> None:

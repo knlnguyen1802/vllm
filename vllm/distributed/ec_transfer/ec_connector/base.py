@@ -215,7 +215,7 @@ class ECConnectorBase(ABC):
         pass
 
     @abstractmethod
-    def update_state_after_alloc(self, request: "Request", index: int):
+    def update_state_after_alloc(self, request: "Request", index: int, local_hit: bool, remote_hit: bool):
         """
         Update ECConnector state to decide allocate cache for requests
 

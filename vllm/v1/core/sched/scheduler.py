@@ -402,11 +402,11 @@ class Scheduler(SchedulerInterface):
                 for i in encoder_inputs_to_schedule:
                     self.encoder_cache_manager.allocate(request, i)
                 encoder_compute_budget = new_encoder_compute_budget
-            if external_load_encoder_input:
-                for i in external_load_encoder_input:
+            if external_update_encoder_input:
+                for i, local_hit, remote_hit in external_update_encoder_input:
                     self.encoder_cache_manager.allocate(request, i)
                     if self.ec_connector is not None:
-                        self.ec_connector.update_state_after_alloc(request, i)
+                        self.ec_connector.update_state_after_alloc(request, i, local_hit, remote_hit)
 
         # Record the LoRAs in scheduled_running_reqs
         scheduled_loras: set[int] = set()
@@ -875,7 +875,7 @@ class Scheduler(SchedulerInterface):
         num_new_tokens: int,
         encoder_compute_budget: int,
         shift_computed_tokens: int = 0,
-    ) -> tuple[list[int], int, int, list[int]]:
+    ) -> tuple[list[int], int, int, list[tuple[int, bool, bool]]]:
         """
         Determine which encoder inputs need to be scheduled in the current step,
         and update `num_new_tokens` and encoder token budget accordingly.
@@ -999,7 +999,7 @@ class Scheduler(SchedulerInterface):
 
             if self.ec_connector is not None and remote_cache_has_item[i]:
                 mm_hashes_to_schedule.add(request.mm_features[i].identifier)
-                external_update_encoder_input.append(i,False,remote_cache_has_item[i])
+                external_update_encoder_input.append((i,False,remote_cache_has_item[i]))
                 num_tokens_to_schedule += num_encoder_tokens
                 continue
 
