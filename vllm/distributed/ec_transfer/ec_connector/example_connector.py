@@ -4,8 +4,9 @@ import asyncio
 import json
 import os
 import time
+import threading
 from dataclasses import dataclass, asdict
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, override
 
 from filelock import FileLock, Timeout
 
@@ -76,7 +77,10 @@ class ECExampleConnector(ECConnectorBase):
         super().__init__(vllm_config=vllm_config, role=role)
         # req_id -> index
         self._mm_datas_need_loads: dict[str, int] = {}
-        self._mm_data_need_update: list[int] = []
+        # mm_hash -> num_encoder_token for saves
+        self._mm_datas_need_saves: dict[str, int] = {}
+        # list of mm_hash to update meta (read or write depending on role)
+        self._mm_datas_need_update_meta: list[str] = []
         transfer_config = vllm_config.ec_transfer_config
         if transfer_config is not None:
             self._storage_path = transfer_config.get_from_extra_config(
@@ -91,7 +95,14 @@ class ECExampleConnector(ECConnectorBase):
         self._deallocate_cache_enabled = transfer_config.get_from_extra_config(
             "deallocate_cache", False
         ) if transfer_config else False
-        logger.info(f"_deallocate_cache_enabled enable is {self._deallocate_cache_enabled}")
+        logger.info(
+            "_deallocate_cache_enabled enable is %s",
+            self._deallocate_cache_enabled,
+        )
+
+        # Protect in-memory pending-state structures from concurrent
+        # access if this connector is used from multiple threads.
+        self._mm_state_lock = threading.Lock()
 
     def start_load_caches(self, encoder_cache, **kwargs) -> None:
         """
@@ -130,7 +141,11 @@ class ECExampleConnector(ECConnectorBase):
                 encoder_cache[mm_data.mm_hash] = ec_cache
                 logger.debug("Success load encoder cache for hash %s", mm_data.mm_hash)
             except Exception as e:
-                logger.error("Failed to load encoder cache for %s: %s", mm_data.mm_hash, str(e))
+                logger.error(
+                    "Failed to load encoder cache for %s: %s",
+                    mm_data.mm_hash,
+                    str(e),
+                )
             
             # If deallocation is enabled, load metadata (increments read_count)
             if self._deallocate_cache_enabled:
@@ -214,10 +229,101 @@ class ECExampleConnector(ECConnectorBase):
         encoder_cache,
         **kwargs
     ) -> None:
-        if not self._deallocate_cache_enabled:
-            return
-        # TODO
-        
+        # First: process any pending saves. These should be executed
+        # by the producer role. We always attempt to save when we are
+        # a producer and the encoder cache contains the mm_hash.
+        processed_saves: list[str] = []
+        # Iterate over a snapshot so we can modify the original safely.
+        for mm_hash, num_token in list(self._mm_datas_need_saves.items()):
+            # Only try to save if this connector is a producer and cache exists.
+            if not self.is_producer:
+                continue
+
+            if mm_hash not in encoder_cache:
+                # Can't save if we don't have the cache locally; skip for now.
+                continue
+
+            try:
+                # save_caches may raise on IO errors; treat success as processed
+                # so we don't retry infinitely. If you prefer retries, change
+                # this to only remove on success.
+                self.save_caches(
+                    encoder_cache=encoder_cache,
+                    mm_hash=mm_hash,
+                    num_token=num_token,
+                )
+                processed_saves.append(mm_hash)
+            except Exception as e:
+                logger.warning("Failed to save cache for %s: %s", mm_hash, str(e))
+
+        # Second: process any pending meta updates. If we are a producer
+        # we should increment the write_count (update_mm_meta_write). If we
+        # are a consumer/non-producer we increment the read_count
+        # (update_mm_meta_read) so deallocation can be observed.
+        processed_updates: list[str] = []
+        for mm_hash in list(self._mm_datas_need_update_meta):
+            try:
+                if self.is_producer:
+                    # For producers: increment write_count. Try to preserve
+                    # the existing num_token by reading existing meta if present.
+                    num_token = 0
+                    try:
+                        meta_filename = self._generate_meta_filename(mm_hash)
+                        if os.path.exists(meta_filename):
+                            with open(meta_filename, "r") as f:
+                                data = json.load(f)
+                                num_token = data.get("num_token", 0)
+                        else:
+                            num_token = kwargs.get("num_token", 0)
+                    except Exception:
+                        num_token = kwargs.get("num_token", 0)
+
+                    if self._deallocate_cache_enabled:
+                        mm_meta = MMMeta.make_meta(
+                            mm_hash=mm_hash,
+                            num_token=num_token,
+                            deallocate_cache=self._deallocate_cache_enabled,
+                        )
+                        try:
+                            self.update_mm_meta_write(mm_meta)
+                            processed_updates.append(mm_hash)
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to update meta write for %s: %s",
+                                mm_hash,
+                                str(e),
+                            )
+                else:
+                    # For consumers: increment read_count which may trigger
+                    # deallocation when read_count == write_count.
+                    if self._deallocate_cache_enabled:
+                        try:
+                            self.update_mm_meta_read(mm_hash)
+                            processed_updates.append(mm_hash)
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to update meta read for %s: %s",
+                                mm_hash,
+                                str(e),
+                            )
+            except Exception as e:
+                logger.exception(
+                    "Unexpected error while processing meta update for %s: %s",
+                    mm_hash,
+                    str(e),
+                )
+
+        # Remove processed entries under lock to avoid races with other threads
+        # that may append new items to the lists/dicts.
+        if processed_saves or processed_updates:
+            with self._mm_state_lock:
+                for mm_hash in processed_saves:
+                    self._mm_datas_need_saves.pop(mm_hash, None)
+                for mm_hash in processed_updates:
+                    try:
+                        self._mm_datas_need_update_meta.remove(mm_hash)
+                    except ValueError:
+                        pass
 
     def build_connector_meta(
         self,
@@ -286,7 +392,8 @@ class ECExampleConnector(ECConnectorBase):
     def update_mm_meta_write(self, mm_meta: MMMeta) -> bool:
         """
         Save or update the metadata file for the given mm_hash.
-        If the file exists, increment write_count; otherwise create it with write_count=1.
+        If the file exists, increment `write_count`.
+        Otherwise create it with `write_count=1`.
         Uses exclusive file locking to prevent race conditions.
         
         Args:
@@ -294,7 +401,11 @@ class ECExampleConnector(ECConnectorBase):
         """
         # No-op when deallocation metadata behavior is disabled.
         if not self._deallocate_cache_enabled:
-            logger.debug("update_mm_meta_write skipped because deallocate_cache is disabled for %s", mm_meta.mm_hash)
+            logger.debug(
+                "update_mm_meta_write skipped because deallocate_cache is "
+                "disabled for %s",
+                mm_meta.mm_hash,
+            )
             return
 
         meta_filename = self._generate_meta_filename(mm_meta.mm_hash)
@@ -356,7 +467,11 @@ class ECExampleConnector(ECConnectorBase):
                                 pass
                         logger.debug("Created log file for %s", mm_meta.mm_hash)
                     except Exception as e:
-                        logger.warning("Failed to create log file for %s: %s", mm_meta.mm_hash, str(e))
+                        logger.warning(
+                            "Failed to create log file for %s: %s",
+                            mm_meta.mm_hash,
+                            str(e),
+                        )
 
     def update_mm_meta_read(self, mm_hash: str) -> bool:
         """
@@ -368,11 +483,16 @@ class ECExampleConnector(ECConnectorBase):
             mm_hash (str): The hash identifier for the multimodal data.
             
         Returns:
-            Optional[MMMeta]: The metadata object if loaded successfully, None otherwise.
+            Optional[MMMeta]: The metadata object if loaded successfully,
+                None otherwise.
         """
         # No-op when deallocation metadata behavior is disabled.
         if not self._deallocate_cache_enabled:
-            logger.debug("update_mm_meta_read skipped because deallocate_cache is disabled for %s", mm_hash)
+            logger.debug(
+                "update_mm_meta_read skipped because deallocate_cache is "
+                "disabled for %s",
+                mm_hash,
+            )
             return
 
         meta_filename = self._generate_meta_filename(mm_hash)
@@ -380,7 +500,10 @@ class ECExampleConnector(ECConnectorBase):
         lock = _get_file_lock(meta_filename)
         with lock:
             if not os.path.exists(meta_filename):
-                logger.warning("Meta file not found for %s (may have been deleted)", mm_hash)
+                logger.warning(
+                    "Meta file not found for %s (may have been deleted)",
+                    mm_hash,
+                )
                 return
 
             try:
@@ -401,7 +524,12 @@ class ECExampleConnector(ECConnectorBase):
                     read_count = data["read_count"]
                     write_count = data["write_count"]
 
-                    logger.debug("Loaded meta for %s, read_count=%d, write_count=%d", mm_hash, read_count, write_count)
+                    logger.debug(
+                        "Loaded meta for %s, read_count=%d, write_count=%d",
+                        mm_hash,
+                        read_count,
+                        write_count,
+                    )
                     meta = MMMeta(
                         mm_hash=data["mm_hash"],
                         num_token=data["num_token"],
@@ -411,7 +539,6 @@ class ECExampleConnector(ECConnectorBase):
                     )
 
                     if read_count == write_count:
-                        logger.debug(f"Start try to deallocate for {meta}")
                         self.maybe_deallocate_cache(meta)
             except json.JSONDecodeError as e:
                 logger.error("Failed to decode meta file for %s: %s", mm_hash, str(e))
@@ -427,7 +554,6 @@ class ECExampleConnector(ECConnectorBase):
             mm_meta (MMMeta): The metadata object to check for deallocation.
         """
         # Respect global flag as well as per-meta flag
-        logger.info(f"Try to deallocate mm meta {mm_meta}")
         if not self._deallocate_cache_enabled or not mm_meta.deallocate_cache:
             return
             
@@ -438,7 +564,10 @@ class ECExampleConnector(ECConnectorBase):
         try:
             with lock:
                 if not os.path.exists(meta_filename):
-                    logger.debug("Meta file already deleted for %s during deallocation check", mm_meta.mm_hash)
+                    logger.debug(
+                        "Meta file already deleted for %s during deallocation check",
+                        mm_meta.mm_hash,
+                    )
                     return
 
                 # Read latest counts under lock
@@ -460,7 +589,11 @@ class ECExampleConnector(ECConnectorBase):
                                 write_count,
                             )
                     except Exception as e:
-                        logger.warning("Failed to delete cache file for %s: %s", mm_meta.mm_hash, str(e))
+                        logger.warning(
+                            "Failed to delete cache file for %s: %s",
+                            mm_meta.mm_hash,
+                            str(e),
+                        )
 
                     # Delete metadata file
                     try:
@@ -468,7 +601,11 @@ class ECExampleConnector(ECConnectorBase):
                             os.remove(meta_filename)
                             logger.info("Deleted meta file for %s", mm_meta.mm_hash)
                     except Exception as e:
-                        logger.warning("Failed to delete meta file for %s: %s", mm_meta.mm_hash, str(e))
+                        logger.warning(
+                            "Failed to delete meta file for %s: %s",
+                            mm_meta.mm_hash,
+                            str(e),
+                        )
 
                     # Also delete the persistent log file if present
                     try:
@@ -477,11 +614,17 @@ class ECExampleConnector(ECConnectorBase):
                             os.remove(log_filename)
                             logger.info("Deleted log file for %s", mm_meta.mm_hash)
                     except Exception as e:
-                        logger.warning("Failed to delete log file for %s: %s", mm_meta.mm_hash, str(e))
+                        logger.warning(
+                            "Failed to delete log file for %s: %s",
+                            mm_meta.mm_hash,
+                            str(e),
+                        )
 
                     # Try to remove the directory if empty
-                    folder = self._generate_foldername_debug(mm_meta.mm_hash, create_folder=False)
-                    logger.info(f"Folder name is {folder}")
+                    folder = self._generate_foldername_debug(
+                        mm_meta.mm_hash, create_folder=False
+                    )
+                    logger.info("Folder name is %s", folder)
                     try:
                         os.rmdir(folder)
                         logger.info("Removed empty folder for %s", mm_meta.mm_hash)
@@ -489,4 +632,8 @@ class ECExampleConnector(ECConnectorBase):
                         # Directory not empty or doesn't exist, ignore
                         pass
         except Exception as e:
-            logger.error("Error during deallocation for %s: %s", mm_meta.mm_hash, str(e))
+            logger.error(
+                "Error during deallocation for %s: %s",
+                mm_meta.mm_hash,
+                str(e),
+            )

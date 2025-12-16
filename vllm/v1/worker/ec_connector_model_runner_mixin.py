@@ -82,15 +82,7 @@ class ECConnectorModelRunnerMixin:
             output.finished_sending, output.finished_recving = (
                 ec_connector.get_finished(scheduler_output.finished_req_ids)
             )
-
+            ec_connector.maybe_update_remote_cache_state(encoder_cache)
             ec_connector.clear_connector_metadata()
     
-    @staticmethod
-    def maybe_update_ec_connector_state(
-        encoder_cache: dict[str, torch.Tensor]
-    ):
-        if not has_ec_transfer():
-            return
-        connector = get_ec_transfer()
-        connector.maybe_update_remote_cache_state(encoder_cache)
     
