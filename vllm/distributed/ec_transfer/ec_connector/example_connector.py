@@ -625,7 +625,7 @@ class ECExampleConnector(ECConnectorBase):
                     folder = self._generate_foldername_debug(
                         mm_meta.mm_hash, create_folder=False
                     )
-                    logger.info("Folder name is %s", folder)
+                    logger.debug("Folder name is %s", folder)
                     try:
                         os.rmdir(folder)
                         logger.info("Removed empty folder for %s", mm_meta.mm_hash)
