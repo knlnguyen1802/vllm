@@ -158,7 +158,7 @@ class ECConnectorBase(ABC):
             kwargs (dict): Additional keyword arguments for the connector.
         """
         pass
-    
+
     @abstractmethod
     def maybe_update_remote_cache_state(
         self, encoder_cache: dict[str, torch.Tensor]
@@ -171,7 +171,7 @@ class ECConnectorBase(ABC):
 
         Args:
             encoder_cache (dict[str, torch.Tensor]): A dictionary mapping multimodal
-                data hashes (`mm_hash`) to encoder cache tensors.   
+                data hashes (`mm_hash`) to encoder cache tensors.
         """
         pass
 
@@ -215,7 +215,9 @@ class ECConnectorBase(ABC):
         pass
 
     @abstractmethod
-    def update_state_after_alloc(self, request: "Request", index: int, local_hit: bool, remote_hit: bool):
+    def update_state_after_alloc(
+        self, request: "Request", index: int, local_hit: bool, remote_hit: bool
+    ):
         """
         Update ECConnector state to decide allocate cache for requests
 

@@ -84,5 +84,3 @@ class ECConnectorModelRunnerMixin:
             )
             ec_connector.maybe_update_remote_cache_state(encoder_cache)
             ec_connector.clear_connector_metadata()
-    
-    

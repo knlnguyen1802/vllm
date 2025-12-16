@@ -280,7 +280,7 @@ class Scheduler(SchedulerInterface):
 
             # Schedule encoder inputs.
             encoder_inputs_to_schedule = None
-            external_update_encoder_input: list[tuple[int,bool,bool]] = []
+            external_update_encoder_input: list[tuple[int, bool, bool]] = []
             new_encoder_compute_budget = encoder_compute_budget
             if request.has_encoder_inputs:
                 (
@@ -406,7 +406,9 @@ class Scheduler(SchedulerInterface):
                 for i, local_hit, remote_hit in external_update_encoder_input:
                     self.encoder_cache_manager.allocate(request, i)
                     if self.ec_connector is not None:
-                        self.ec_connector.update_state_after_alloc(request, i, local_hit, remote_hit)
+                        self.ec_connector.update_state_after_alloc(
+                            request, i, local_hit, remote_hit
+                        )
 
         # Record the LoRAs in scheduled_running_reqs
         scheduled_loras: set[int] = set()
@@ -655,7 +657,9 @@ class Scheduler(SchedulerInterface):
                     for i, local_hit, remote_hit in external_update_encoder_input:
                         self.encoder_cache_manager.allocate(request, i)
                         if self.ec_connector is not None:
-                            self.ec_connector.update_state_after_alloc(request, i, local_hit, remote_hit)
+                            self.ec_connector.update_state_after_alloc(
+                                request, i, local_hit, remote_hit
+                            )
         # Put back any skipped requests at the head of the waiting queue
         if skipped_waiting_requests:
             self.waiting.prepend_requests(skipped_waiting_requests)
@@ -958,10 +962,12 @@ class Scheduler(SchedulerInterface):
                 if self.encoder_cache_manager.check_and_update_cache(request, i):
                     # The encoder input is already computed and cached from a
                     # previous step.
-                    # Store to option update remote cache state when hit on local 
+                    # Store to option update remote cache state when hit on local
                     # encoder cache
                     if self.ec_connector is not None:
-                        external_update_encoder_input.append((i,True,remote_cache_has_item[i]))
+                        external_update_encoder_input.append(
+                            (i, True, remote_cache_has_item[i])
+                        )
                     continue
 
             # If no encoder input chunking is allowed, we do not want to
@@ -999,7 +1005,9 @@ class Scheduler(SchedulerInterface):
 
             if self.ec_connector is not None and remote_cache_has_item[i]:
                 mm_hashes_to_schedule.add(request.mm_features[i].identifier)
-                external_update_encoder_input.append((i,False,remote_cache_has_item[i]))
+                external_update_encoder_input.append(
+                    (i, False, remote_cache_has_item[i])
+                )
                 num_tokens_to_schedule += num_encoder_tokens
                 continue
 
@@ -1012,7 +1020,7 @@ class Scheduler(SchedulerInterface):
             encoder_inputs_to_schedule,
             num_new_tokens,
             encoder_compute_budget,
-            external_update_encoder_input
+            external_update_encoder_input,
         )
 
     def get_grammar_bitmask(

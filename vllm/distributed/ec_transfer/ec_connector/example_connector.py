@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-import asyncio
 import json
 import os
-import time
 import threading
-from dataclasses import dataclass, asdict
-from typing import TYPE_CHECKING, Optional, override
-
-from filelock import FileLock, Timeout
+import time
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 import safetensors
+from filelock import FileLock
 
 from vllm.config import VllmConfig
 from vllm.distributed.ec_transfer.ec_connector.base import (
@@ -54,7 +52,7 @@ class MMMeta:
             num_token=num_token,
             read_count=0,
             write_count=0,
-            deallocate_cache=deallocate_cache
+            deallocate_cache=deallocate_cache,
         )
 
 
@@ -90,11 +88,13 @@ class ECExampleConnector(ECConnectorBase):
             logger.debug("Shared storage path is %s", self._storage_path)
         else:
             raise ValueError("ec_transfer_config must be set for ECConnectorBase")
-        
+
         # Default deallocate_cache flag
-        self._deallocate_cache_enabled = transfer_config.get_from_extra_config(
-            "deallocate_cache", False
-        ) if transfer_config else False
+        self._deallocate_cache_enabled = (
+            transfer_config.get_from_extra_config("deallocate_cache", False)
+            if transfer_config
+            else False
+        )
         logger.info(
             "_deallocate_cache_enabled enable is %s",
             self._deallocate_cache_enabled,
@@ -146,7 +146,7 @@ class ECExampleConnector(ECConnectorBase):
                     mm_data.mm_hash,
                     str(e),
                 )
-            
+
             # If deallocation is enabled, load metadata (increments read_count)
             if self._deallocate_cache_enabled:
                 self.update_mm_meta_read(mm_data.mm_hash)
@@ -167,12 +167,12 @@ class ECExampleConnector(ECConnectorBase):
         # Return if it is PD Instance
         if not self.is_producer:
             return
-        
+
         filename = self._generate_filename_debug(mm_hash)
         ec_cache = encoder_cache[mm_hash]
         tensors = {"ec_cache": ec_cache.detach().cpu()}
         safetensors.torch.save_file(tensors, filename)
-        
+
         # Save metadata with write_count tracking
         # Extract num_token from kwargs if available, default to 0
         num_token = kwargs.get("num_token", 0)
@@ -184,7 +184,7 @@ class ECExampleConnector(ECConnectorBase):
                 deallocate_cache=self._deallocate_cache_enabled,
             )
             self.update_mm_meta_write(mm_meta)
-        
+
         logger.debug("Save cache successful for mm_hash %s", mm_hash)
 
     def has_caches(
@@ -224,11 +224,7 @@ class ECExampleConnector(ECConnectorBase):
         elif remote_hit and local_hit:
             self._mm_datas_need_update_meta.append(mm_hash)
 
-    def maybe_update_remote_cache_state(
-        self,
-        encoder_cache,
-        **kwargs
-    ) -> None:
+    def maybe_update_remote_cache_state(self, encoder_cache, **kwargs) -> None:
         # First: process any pending saves. These should be executed
         # by the producer role. We always attempt to save when we are
         # a producer and the encoder cache contains the mm_hash.
@@ -270,7 +266,7 @@ class ECExampleConnector(ECConnectorBase):
                     try:
                         meta_filename = self._generate_meta_filename(mm_hash)
                         if os.path.exists(meta_filename):
-                            with open(meta_filename, "r") as f:
+                            with open(meta_filename) as f:
                                 data = json.load(f)
                                 num_token = data.get("num_token", 0)
                         else:
@@ -395,7 +391,7 @@ class ECExampleConnector(ECConnectorBase):
         If the file exists, increment `write_count`.
         Otherwise create it with `write_count=1`.
         Uses exclusive file locking to prevent race conditions.
-        
+
         Args:
             mm_meta (MMMeta): The metadata object to save.
         """
@@ -455,11 +451,15 @@ class ECExampleConnector(ECConnectorBase):
                     try:
                         log_filename = self._generate_meta_log_filename(mm_meta.mm_hash)
                         with open(log_filename, "w") as lf:
-                            lf.write(json.dumps({
-                                "mm_hash": mm_meta.mm_hash,
-                                "created_at": int(time.time()),
-                                "num_token": mm_meta.num_token,
-                            }))
+                            lf.write(
+                                json.dumps(
+                                    {
+                                        "mm_hash": mm_meta.mm_hash,
+                                        "created_at": int(time.time()),
+                                        "num_token": mm_meta.num_token,
+                                    }
+                                )
+                            )
                             lf.flush()
                             try:
                                 os.fsync(lf.fileno())
@@ -472,7 +472,7 @@ class ECExampleConnector(ECConnectorBase):
                             mm_meta.mm_hash,
                             str(e),
                         )
-        
+
         return None
 
     def update_mm_meta_read(self, mm_hash: str) -> None:
@@ -480,10 +480,10 @@ class ECExampleConnector(ECConnectorBase):
         Load the metadata file for the given mm_hash and increment read_count.
         Uses exclusive file locking to prevent race conditions.
         Handles the case where the file might be deleted by a concurrent reader.
-        
+
         Args:
             mm_hash (str): The hash identifier for the multimodal data.
-            
+
         Returns:
             Optional[MMMeta]: The metadata object if loaded successfully,
                 None otherwise.
@@ -542,29 +542,28 @@ class ECExampleConnector(ECConnectorBase):
 
                     if read_count == write_count:
                         self.maybe_deallocate_cache(meta)
-                    
+
                     return None
             except json.JSONDecodeError as e:
                 logger.error("Failed to decode meta file for %s: %s", mm_hash, str(e))
                 return None
-
 
     def maybe_deallocate_cache(self, mm_meta: MMMeta) -> None:
         """
         Lazily deallocate cache files when read_count equals write_count.
         This is only called when deallocate_cache flag is set.
         Deletes both metadata and value files.
-        
+
         Args:
             mm_meta (MMMeta): The metadata object to check for deallocation.
         """
         # Respect global flag as well as per-meta flag
         if not self._deallocate_cache_enabled or not mm_meta.deallocate_cache:
             return
-            
+
         meta_filename = self._generate_meta_filename(mm_meta.mm_hash)
         cache_filename = self._generate_filename_debug(mm_meta.mm_hash)
-        
+
         lock = _get_file_lock(meta_filename)
         try:
             with lock:
@@ -576,7 +575,7 @@ class ECExampleConnector(ECConnectorBase):
                     return
 
                 # Read latest counts under lock
-                with open(meta_filename, "r") as f:
+                with open(meta_filename) as f:
                     data = json.load(f)
                     read_count = data.get("read_count", 0)
                     write_count = data.get("write_count", 0)
