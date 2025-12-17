@@ -404,7 +404,8 @@ class Scheduler(SchedulerInterface):
                 encoder_compute_budget = new_encoder_compute_budget
             if external_update_encoder_input:
                 for i, local_hit, remote_hit in external_update_encoder_input:
-                    self.encoder_cache_manager.allocate(request, i)
+                    if not local_hit:
+                        self.encoder_cache_manager.allocate(request, i)
                     if self.ec_connector is not None:
                         self.ec_connector.update_state_after_alloc(
                             request, i, local_hit, remote_hit
@@ -655,7 +656,8 @@ class Scheduler(SchedulerInterface):
                 # Allocate for external load encoder cache
                 if external_update_encoder_input:
                     for i, local_hit, remote_hit in external_update_encoder_input:
-                        self.encoder_cache_manager.allocate(request, i)
+                        if not local_hit:
+                            self.encoder_cache_manager.allocate(request, i)
                         if self.ec_connector is not None:
                             self.ec_connector.update_state_after_alloc(
                                 request, i, local_hit, remote_hit
