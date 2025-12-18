@@ -3,12 +3,12 @@
 import contextlib
 import json
 import os
+import weakref
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import safetensors
 from filelock import FileLock
-import weakref
 
 from vllm.config import VllmConfig
 from vllm.distributed.ec_transfer.ec_connector.base import (
@@ -46,10 +46,10 @@ class ECExampleConnectorMetadata(ECConnectorMetadata):
 
     def add_meta_to_load(self, mm_hash: str):
         self.mm_datas_to_load.append(mm_hash)
-    
+
     def add_meta_to_save(self, mm_hash: str):
         self.mm_datas_to_save.append(mm_hash)
-    
+
     def add_meta_to_update(self, mm_hash: str):
         if mm_hash not in self.mm_datas_to_update:
             self.mm_datas_to_update[mm_hash] = 0
@@ -290,6 +290,9 @@ class ECExampleConnector(ECConnectorBase):
         if not self._deallocate_cache_enabled:
             return None
 
+        read_count = count if not self.is_producer else 0
+        write_count = count if self.is_producer else 0
+
         meta_filename = self._generate_meta_filename(mm_hash)
 
         lock = _get_file_lock(meta_filename)
@@ -299,9 +302,9 @@ class ECExampleConnector(ECConnectorBase):
                 # Update existing meta
                 with open(meta_filename, "r+") as f:
                     data = json.load(f)
-                    data[WRITE_COUNT] += (count if self.is_producer else 0)
-                    data[READ_COUNT] += (count if not self.is_producer else 0)
-                
+                    data[WRITE_COUNT] += write_count
+                    data[READ_COUNT] += read_count
+
                 if data[WRITE_COUNT] == data[READ_COUNT] and data[READ_COUNT] > 0:
                     tensorfile = self._generate_filename_debug(mm_hash)
                     with contextlib.suppress(FileNotFoundError):
@@ -310,8 +313,8 @@ class ECExampleConnector(ECConnectorBase):
                     return
             else:
                 data = {
-                    WRITE_COUNT: count if self.is_producer else 0,
-                    READ_COUNT: count if not self.is_producer else 0,
+                    WRITE_COUNT: write_count,
+                    READ_COUNT: read_count,
                 }
 
             with open(meta_filename, "w") as f:

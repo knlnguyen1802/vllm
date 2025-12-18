@@ -6,7 +6,7 @@ declare -a PIDS=()
 ###############################################################################
 # Configuration -- override via env before running
 ###############################################################################
-MODEL="${MODEL:-Qwen/Qwen2.5-VL-3B-Instruct}"
+MODEL="${MODEL:-/models/Qwen2.5-VL-3B-Instruct}"
 LOG_PATH="${LOG_PATH:-./logs}"
 mkdir -p $LOG_PATH
 
@@ -14,8 +14,8 @@ ENCODE_PORT="${ENCODE_PORT:-19534}"
 PREFILL_DECODE_PORT="${PREFILL_DECODE_PORT:-19535}"
 PROXY_PORT="${PROXY_PORT:-10001}"
 
-GPU_E="${GPU_E:-0}"
-GPU_PD="${GPU_PD:-1}"
+GPU_E="${GPU_E:-6}"
+GPU_PD="${GPU_PD:-7}"
 
 EC_SHARED_STORAGE_PATH="${EC_SHARED_STORAGE_PATH:-/tmp/ec_cache}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-12000}"   # wait_for_server timeout
@@ -150,35 +150,35 @@ echo "All services are up!"
 ###############################################################################
 # Benchmark
 ###############################################################################
-echo "Running benchmark (stream)..."
-vllm bench serve \
-  --model               $MODEL \
-  --backend             openai-chat \
-  --endpoint            /v1/chat/completions \
-  --dataset-name        hf \
-  --dataset-path        lmarena-ai/VisionArena-Chat \
-  --seed                0 \
-  --num-prompts         $NUM_PROMPTS \
-  --port                $PROXY_PORT
+# echo "Running benchmark (stream)..."
+# vllm bench serve \
+#   --model               $MODEL \
+#   --backend             openai-chat \
+#   --endpoint            /v1/chat/completions \
+#   --dataset-name        hf \
+#   --dataset-path        lmarena-ai/VisionArena-Chat \
+#   --seed                0 \
+#   --num-prompts         $NUM_PROMPTS \
+#   --port                $PROXY_PORT
 
-PIDS+=($!)
+# PIDS+=($!)
 
-###############################################################################
-# Single request with local image
-###############################################################################
-echo "Running single request with local image (non-stream)..."
-curl http://127.0.0.1:${PROXY_PORT}/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{
-    "model": "'${MODEL}'",
-    "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": [
-        {"type": "image_url", "image_url": {"url": "file://'"${GIT_ROOT}"'/tests/v1/ec_connector/integration/hato.jpg"}},
-        {"type": "text", "text": "What is in this image?"}
-    ]}
-    ]
-    }'
+# ###############################################################################
+# # Single request with local image
+# ###############################################################################
+# echo "Running single request with local image (non-stream)..."
+# curl http://127.0.0.1:${PROXY_PORT}/v1/chat/completions \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#     "model": "'${MODEL}'",
+#     "messages": [
+#     {"role": "system", "content": "You are a helpful assistant."},
+#     {"role": "user", "content": [
+#         {"type": "image_url", "image_url": {"url": "file://'"${GIT_ROOT}"'/tests/v1/ec_connector/integration/hato.jpg"}},
+#         {"type": "text", "text": "What is in this image?"}
+#     ]}
+#     ]
+#     }'
 
 
 # cleanup
