@@ -908,7 +908,8 @@ class Scheduler(SchedulerInterface):
         mm_features = request.mm_features
         assert mm_features is not None
         assert len(mm_features) > 0
-        # List of tuples: (media_index, local_hit, remote_hit) for encoder cache state tracking
+        # List of tuples: (media_index, local_hit, remote_hit)
+        # for encoder cache state tracking
         external_update_encoder_input: list[tuple[int, bool, bool]] = []
 
         # Check remote cache first
