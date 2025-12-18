@@ -198,6 +198,7 @@ class ECExampleConnector(ECConnectorBase):
 
     def maybe_update_remote_cache_state(self, encoder_cache, **kwargs) -> None:
         metadata = self._get_connector_metadata()
+        assert isinstance(metadata, ECExampleConnectorMetadata)
 
         for mm_hash in metadata.mm_datas_to_save:
             if (not self.is_producer) or (mm_hash not in encoder_cache):
