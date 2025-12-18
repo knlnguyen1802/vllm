@@ -3,13 +3,12 @@
 import contextlib
 import json
 import os
-import threading
-import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import safetensors
 from filelock import FileLock
+import weakref
 
 from vllm.config import VllmConfig
 from vllm.distributed.ec_transfer.ec_connector.base import (
@@ -26,7 +25,7 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 # Cache FileLock objects per path to avoid reallocating locks repeatedly.
-_file_locks: dict[str, FileLock] = {}
+_file_locks: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 
 
 def _get_file_lock(path: str) -> FileLock:
