@@ -280,6 +280,7 @@ class Scheduler(SchedulerInterface):
 
             # Schedule encoder inputs.
             encoder_inputs_to_schedule = None
+            # List of tuples: (media_index, local_hit, remote_hit)
             external_update_encoder_input: list[tuple[int, bool, bool]] = []
             new_encoder_compute_budget = encoder_compute_budget
             if request.has_encoder_inputs:

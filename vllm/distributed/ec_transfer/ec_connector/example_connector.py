@@ -24,16 +24,10 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-# Cache FileLock objects per path to avoid reallocating locks repeatedly.
-_file_locks: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
-
 
 def _get_file_lock(path: str) -> FileLock:
     lock_path = path + ".lock"
-    lock = _file_locks.get(lock_path)
-    if lock is None:
-        lock = FileLock(lock_path)
-        _file_locks[lock_path] = lock
+    lock = FileLock(lock_path)
     return lock
 
 
@@ -289,7 +283,7 @@ class ECExampleConnector(ECConnectorBase):
         READ_COUNT = "read_count"
         # No-op when deallocation metadata behavior is disabled.
         if not self._deallocate_cache_enabled:
-            return None
+            return
 
         read_count = count if not self.is_producer else 0
         write_count = count if self.is_producer else 0
@@ -320,5 +314,3 @@ class ECExampleConnector(ECConnectorBase):
 
             with open(meta_filename, "w") as f:
                 json.dump(data, f, indent=4)
-
-        return None
