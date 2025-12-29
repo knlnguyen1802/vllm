@@ -3,7 +3,6 @@
 import contextlib
 import json
 import os
-import weakref
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
