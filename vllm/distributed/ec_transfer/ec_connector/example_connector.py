@@ -379,10 +379,22 @@ class ECExampleConnector(ECConnectorBase):
         foldername = self._generate_foldername_debug(mm_hash)
         return os.path.join(foldername, "meta.json")
 
-    def _generate_meta_log_filename(self, mm_hash: str) -> str:
-        """Return the full path of the persistent log file for this mm_hash."""
-        foldername = self._generate_foldername_debug(mm_hash)
-        return os.path.join(foldername, "meta.log")
+    def _read_meta_locked(self, meta_filename: str) -> dict | None:
+        """Read metadata file. Must be called within lock context."""
+        try:
+            with open(meta_filename) as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.warning("Failed to read meta %s: %s", meta_filename, str(e))
+            return None
+
+    def _write_meta_locked(self, meta_filename: str, data: dict) -> None:
+        """Write metadata file. Must be called within lock context."""
+        with open(meta_filename, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            with contextlib.suppress(Exception):
+                os.fsync(f.fileno())
 
     def update_mm_meta_write(self, mm_meta: MMMeta) -> None:
         """
@@ -394,83 +406,32 @@ class ECExampleConnector(ECConnectorBase):
         Args:
             mm_meta (MMMeta): The metadata object to save.
         """
-        # No-op when deallocation metadata behavior is disabled.
         if not self._deallocate_cache_enabled:
-            logger.debug(
-                "update_mm_meta_write skipped because deallocate_cache is "
-                "disabled for %s",
-                mm_meta.mm_hash,
-            )
-            return None
+            return
 
         meta_filename = self._generate_meta_filename(mm_meta.mm_hash)
-
         lock = _get_file_lock(meta_filename)
-        # Acquire per-file lock before reading/writing metadata
+
         with lock:
-            if os.path.exists(meta_filename):
-                # Update existing meta
-                with open(meta_filename, "r+") as f:
-                    data = json.load(f)
-                    data["write_count"] = data.get("write_count", 0) + 1
-                    data["mm_hash"] = mm_meta.mm_hash
-                    data["num_token"] = mm_meta.num_token
-                    data["deallocate_cache"] = mm_meta.deallocate_cache
-
-                    f.seek(0)
-                    json.dump(data, f, indent=2)
-                    f.truncate()
-                    try:
-                        f.flush()
-                        os.fsync(f.fileno())
-                    except Exception:
-                        pass
-
-                    logger.debug(
-                        "Updated meta for %s, write_count=%d",
-                        mm_meta.mm_hash,
-                        data["write_count"],
-                    )
+            data = self._read_meta_locked(meta_filename)
+            if data:
+                # Update existing metadata
+                data["write_count"] = data.get("write_count", 0) + 1
+                data["num_token"] = mm_meta.num_token
+                data["deallocate_cache"] = mm_meta.deallocate_cache
+                logger.debug(
+                    "Updated meta for %s, write_count=%d",
+                    mm_meta.mm_hash,
+                    data["write_count"],
+                )
             else:
-                # Create new meta atomic under lock
-                with open(meta_filename, "w") as f:
-                    data = asdict(mm_meta)
-                    data["write_count"] = 1
-                    data["read_count"] = 0
-                    json.dump(data, f, indent=2)
-                    try:
-                        f.flush()
-                        os.fsync(f.fileno())
-                    except Exception:
-                        pass
+                # Create new metadata
+                data = asdict(mm_meta)
+                data["write_count"] = 1
+                data["read_count"] = 0
+                logger.debug("Created meta for %s", mm_meta.mm_hash)
 
-                    logger.debug("Created meta for %s, write_count=1", mm_meta.mm_hash)
-
-                    # Create a persistent log file alongside the meta to mark creation.
-                    try:
-                        log_filename = self._generate_meta_log_filename(mm_meta.mm_hash)
-                        with open(log_filename, "w") as lf:
-                            lf.write(
-                                json.dumps(
-                                    {
-                                        "mm_hash": mm_meta.mm_hash,
-                                        "created_at": int(time.time()),
-                                        "num_token": mm_meta.num_token,
-                                    }
-                                )
-                            )
-                            lf.flush()
-                            with contextlib.suppress(Exception):
-                                os.fsync(lf.fileno())
-                        logger.debug("Created log file for %s", mm_meta.mm_hash)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to create log file for %s: %s",
-                            mm_meta.mm_hash,
-                            str(e),
-                        )
-
-        return None
+            self._write_meta_locked(meta_filename, data)
 
     def update_mm_meta_read(self, mm_hash: str) -> None:
         """
@@ -480,70 +441,42 @@ class ECExampleConnector(ECConnectorBase):
 
         Args:
             mm_hash (str): The hash identifier for the multimodal data.
-
-        Returns:
-            Optional[MMMeta]: The metadata object if loaded successfully,
-                None otherwise.
         """
-        # No-op when deallocation metadata behavior is disabled.
         if not self._deallocate_cache_enabled:
-            logger.debug(
-                "update_mm_meta_read skipped because deallocate_cache is "
-                "disabled for %s",
-                mm_hash,
-            )
-            return None
+            return
 
         meta_filename = self._generate_meta_filename(mm_hash)
-
         lock = _get_file_lock(meta_filename)
+
         with lock:
-            if not os.path.exists(meta_filename):
-                logger.warning(
-                    "Meta file not found for %s (may have been deleted)",
-                    mm_hash,
+            data = self._read_meta_locked(meta_filename)
+            if not data:
+                return
+
+            # Increment read count
+            data["read_count"] = data.get("read_count", 0) + 1
+            read_count = data["read_count"]
+            write_count = data.get("write_count", 0)
+
+            logger.debug(
+                "Updated meta for %s, read_count=%d, write_count=%d",
+                mm_hash,
+                read_count,
+                write_count,
+            )
+
+            self._write_meta_locked(meta_filename, data)
+
+            # Trigger deallocation if counts match
+            if read_count == write_count:
+                meta = MMMeta(
+                    mm_hash=data["mm_hash"],
+                    num_token=data["num_token"],
+                    read_count=read_count,
+                    write_count=write_count,
+                    deallocate_cache=data.get("deallocate_cache", False),
                 )
-                return None
-
-            try:
-                with open(meta_filename, "r+") as f:
-                    data = json.load(f)
-                    data["read_count"] = data.get("read_count", 0) + 1
-
-                    # Write back with incremented read_count
-                    f.seek(0)
-                    json.dump(data, f, indent=2)
-                    f.truncate()
-                    try:
-                        f.flush()
-                        os.fsync(f.fileno())
-                    except Exception:
-                        pass
-
-                    read_count = data["read_count"]
-                    write_count = data["write_count"]
-
-                    logger.debug(
-                        "Loaded meta for %s, read_count=%d, write_count=%d",
-                        mm_hash,
-                        read_count,
-                        write_count,
-                    )
-                    meta = MMMeta(
-                        mm_hash=data["mm_hash"],
-                        num_token=data["num_token"],
-                        read_count=data["read_count"],
-                        write_count=data.get("write_count", 0),
-                        deallocate_cache=data.get("deallocate_cache", False),
-                    )
-
-                    if read_count == write_count:
-                        self.maybe_deallocate_cache(meta)
-
-                    return None
-            except json.JSONDecodeError as e:
-                logger.error("Failed to decode meta file for %s: %s", mm_hash, str(e))
-                return None
+                self.maybe_deallocate_cache(meta)
 
     def maybe_deallocate_cache(self, mm_meta: MMMeta) -> None:
         """
@@ -554,87 +487,34 @@ class ECExampleConnector(ECConnectorBase):
         Args:
             mm_meta (MMMeta): The metadata object to check for deallocation.
         """
-        # Respect global flag as well as per-meta flag
         if not self._deallocate_cache_enabled or not mm_meta.deallocate_cache:
+            return
+
+        if mm_meta.read_count != mm_meta.write_count or mm_meta.read_count == 0:
             return
 
         meta_filename = self._generate_meta_filename(mm_meta.mm_hash)
         cache_filename = self._generate_filename_debug(mm_meta.mm_hash)
+        folder = self._generate_foldername_debug(mm_meta.mm_hash, create_folder=False)
 
-        lock = _get_file_lock(meta_filename)
-        try:
-            with lock:
-                if not os.path.exists(meta_filename):
-                    logger.debug(
-                        "Meta file already deleted for %s during deallocation check",
-                        mm_meta.mm_hash,
-                    )
-                    return
+        # Delete files in order: cache -> meta -> folder
+        files_to_delete = [
+            (cache_filename, "cache file"),
+            (meta_filename, "meta file"),
+        ]
 
-                # Read latest counts under lock
-                with open(meta_filename) as f:
-                    data = json.load(f)
-                    read_count = data.get("read_count", 0)
-                    write_count = data.get("write_count", 0)
+        for filepath, desc in files_to_delete:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(filepath)
+                logger.info(
+                    "Deleted %s for %s (read=%d, write=%d)",
+                    desc,
+                    mm_meta.mm_hash,
+                    mm_meta.read_count,
+                    mm_meta.write_count,
+                )
 
-                # Check if we can deallocate
-                if read_count == write_count and read_count > 0:
-                    # Delete cache file first
-                    try:
-                        if os.path.exists(cache_filename):
-                            os.remove(cache_filename)
-                            logger.info(
-                                "Deleted cache file for %s (read=%d, write=%d)",
-                                mm_meta.mm_hash,
-                                read_count,
-                                write_count,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to delete cache file for %s: %s",
-                            mm_meta.mm_hash,
-                            str(e),
-                        )
-
-                    # Delete metadata file
-                    try:
-                        if os.path.exists(meta_filename):
-                            os.remove(meta_filename)
-                            logger.info("Deleted meta file for %s", mm_meta.mm_hash)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to delete meta file for %s: %s",
-                            mm_meta.mm_hash,
-                            str(e),
-                        )
-
-                    # Also delete the persistent log file if present
-                    try:
-                        log_filename = self._generate_meta_log_filename(mm_meta.mm_hash)
-                        if os.path.exists(log_filename):
-                            os.remove(log_filename)
-                            logger.info("Deleted log file for %s", mm_meta.mm_hash)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to delete log file for %s: %s",
-                            mm_meta.mm_hash,
-                            str(e),
-                        )
-
-                    # Try to remove the directory if empty
-                    folder = self._generate_foldername_debug(
-                        mm_meta.mm_hash, create_folder=False
-                    )
-                    logger.info("Folder name is %s", folder)
-                    try:
-                        os.rmdir(folder)
-                        logger.info("Removed empty folder for %s", mm_meta.mm_hash)
-                    except OSError:
-                        # Directory not empty or doesn't exist, ignore
-                        pass
-        except Exception as e:
-            logger.error(
-                "Error during deallocation for %s: %s",
-                mm_meta.mm_hash,
-                str(e),
-            )
+        # Try to remove the directory if empty
+        with contextlib.suppress(OSError):
+            os.rmdir(folder)
+            logger.info("Removed empty folder for %s", mm_meta.mm_hash)
